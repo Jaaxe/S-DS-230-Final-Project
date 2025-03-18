@@ -1,0 +1,259 @@
+---
+title: "S&DS 230 Final Project"
+output:
+  pdf_document: default
+  html_document: default
+  word_document: default
+author: Jarvis Xie (S&DS 230/530/ENV 757)
+---
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+## Introduction
+
+*Our motivation with this project is to investigate college students' varying relationships with food. We used a number of questions that go along with this to identify these relationships, from their life satisfaction and gender to eating habits and GPA. Because many of the variables we used don't intuitively have high degrees of correlation, we did not expect to find much significance in our results, but some interesting results were found between variables.*
+
+## Data
+
+*Within the data set, there are about 60 variables. However, we use 10 variables in our analysis: GPA (on a 4.0 scale), weight (in lbs), frequency of exercise (ordinal, on a scale from never to everyday, 1 indicating higher frequency), frequency of cooking (ordinal, on a scale from never to everyday, 1 indicating higher frequency), life satisfaction (ordinal, from 1-10, 1 indicates most satisfaction), gender (1 being female and 2 being male), frequency of checking nutritional levels (ordinal, 5 indicating higher frequency), change in eating habits in college (with recoding, ordinal, with a higher number indicating better habits), self-perceived weight (ordinal, with higher number indicating higher perceived weight), and healthy feeling (ordinal, on a scale of 1 to 10, 1 indicating strong agreement with the statement "I feel very healthy").*
+
+*First, we downloaded packages necessary for our analysis:*
+
+```{r, message = FALSE}
+library(car)
+library(leaps)
+library(lubridate)
+library(rvest)
+library(corrplot)
+library(knitr)
+source("http://www.reuningscherer.net/s&ds230/Rfuncs/regJDRS.txt")
+```
+
+## Data Cleaning
+
+*The next thing we did was clean the data. To keep data consistent, we rounded all GPAs to one decimal point and removed all commentary such that we could run numerical tests on GPA. We did the same for weight, though we did not round. We also recoded Gender into "F" and "M" rather than leaving them with the numeric indicators. Further, we recoded the exercise frequency and cooking frequency such that a higher number indicated higher frequency. Finally, we removed all rows with NAs.*
+
+```{r}
+food <- read.csv("Food.csv")
+food <- food[c(1, 2, 11, 18, 23, 34, 41, 46, 51, 61)]
+
+#cleaning GPA
+gpa <- food$GPA 
+gpa <- gsub(".* .*", "",gpa)
+gpa <- trimws(gpa)
+gpa <- as.numeric(gpa)
+gpa <- round(gpa, 1)
+food$GPA <- gpa
+
+#cleaning weight
+food$weight <- gsub("[^0-9]", NA, food$weight)
+food$weight <- as.numeric(food$weight)
+
+#recoding Gender
+food$Gender <- recode(food$Gender, "1 = 'F'; 2 = 'M'")
+
+#recoding eating changes
+food$eating_changes_coded <- recode(food$eating_changes_coded, "1 = '1'; 2 = '3'; 3 = '2'")
+food$eating_changes_coded[food$eating_changes_coded == 4] <- NA
+food$eating_changes_coded <- as.numeric(food$eating_changes_coded)
+
+#convert ambiguity in self-perceived weight to NA
+food$self_perception_weight[food$self_pereception_weight == 6] <- NA
+
+#reworking frequency
+food$exercise <- 6 - food$exercise
+food$cook <- 6 - food$cook
+
+#remove NA's
+food <- na.omit(food)
+
+attach(food)
+```
+## Graphics
+```{r}
+plot(weight, GPA, pch = 19, main = "GPA by Weight", col = "mediumslateblue", xlab = "Weight, lbs", ylab ="GPA")
+
+boxplot(food$cook ~ food$Gender, col = "lightblue", xlab = "Gender", ylab = "Cooking Frequency", main = "Cooking Frequency vs Gender")
+
+plot(jitter(exercise), jitter(life_rewarding), pch = 19, main = "Jittered Exercise Frequency vs Life Satsfaction Rating", col = "hotpink", xlab = "Exercise", ylab ="Life Satisfaction Rating")
+```
+
+
+*In this section we include multiple insightful graphics to display relationships between different variables visibly. As an additional note, there are more graphics included in other sections. Our first graph is a scatterplot of weight and GPA; there seems to be no obvious relationship between the two. Our second graph is a boxplot of how often people cook their own meals, separated by gender. Both groups have a median of 3 (the middle value), but males have a larger interquartile range and range. Our third graph is a jittered plot of exercise versus life satisfaction; again there does not seem to be a significant relationship between amount exercised and life satisfaction.*
+
+## Basic Tests
+```{r}
+#boxplot Gender vs GPA
+boxplot(food$weight ~ food$Gender, main = "Boxplot of Gender vs Weight", col = "yellow", ylab = "Weight in Pounds", xlab = "Gender")
+
+#ensure assumptions for weight and gender are met - not perfectly ideal bc there are two outliers
+lm1 <- lm(food$weight ~ food$Gender)
+myResPlots2(lm1)
+
+#t.test for weight and gender
+t.test(food$weight ~ food$Gender)
+
+#ensure assumptions for weight and GPA are met - not perfectly ideal but pretty good bc only 2 outliers
+lm2 <- lm(food$weight ~ food$GPA)
+myResPlots2(lm2)
+
+#find 95% conf interval for the correlation for between gender and weight
+cor.test(food$GPA, food$weight)
+
+#bootstrap confidence interval
+N <- nrow(food)
+n_samp <- 10000
+corres <- rep(NA, n_samp)
+for(i in 1:n_samp){
+  s <- sample(1:N, N , replace = T)
+  fakeData <- food[s, ]
+  corres[i] <- cor(fakeData[, 1], fakeData[, 10])
+}
+
+bci <- quantile(corres, c(0.025, 0.975))
+bci
+
+#graph demonstrating bootstrap vs sample correlations!
+par(cex = 0.8)
+hist(corres, col = "lightblue", main = "Bootstrapped Correlations", xlab = "Sample Correlation", breaks = 50)
+abline(v = bci, lwd = 3, col = "red")
+abline(v = cor.test(food$GPA, food$weight)$conf.int, lwd = 3, col = "green", lty = 2)
+legend(-0.36, 600, c("Theoretical CI","Boot CI"), lwd = 3, col = c("green","red"), lty = c(2, 1))
+```
+
+*Next, we ran several basic tests on multiple variables. We started by looking at a boxplot of weight in pounds, separated by gender to see if there were observable differences. Then, before running a t-test to examine the significance of this relationship, we ensured that the data met the necessary assumptions.*
+*Since the data for variables Gender and Weight mostly fall within the bounds of normal distribution and the residual plots don't demonstrate any worrying heteroskedasticity BUT there are two large upper outliers, we proceed with caution. The t-test reveals that 0 is not in the confidence interval; there is a statistically significant difference between weights for different genders. Mean female weight is 146.5lbs and mean male weight is 176.8lbs. Next, we run tests on the relationship between weight and GPA; again, the data mostly fall within the bounds of normal distribution and the residual plots don't demonstrate any worrying heteroskedasticity BUT there are two large upper outliers. We proceed with caution. Our correlation test reveals a confidence interval that DOES include 0, so there is not a statistically signficant correlation. Our bootstrapped test for the same correlation using 10,000 samples reveals the same thing (although the interval is slightly narrower) that there is not a statistically significant correlation between GPA and weight.*
+
+## Permutation Test
+
+*We also decided to run a permutation test on GPA vs Weight, because we were unsure about the normality of the data sets, and permutation tests are effective whenwe do not know the population distribution of the variables. The results are below:*
+
+```{r}
+#permutation test between GPA and weight
+permCor <- function(x, y, n_samp = 10000, plotit = T){
+  corResults <- rep(NA, n_samp)
+  for (i in 1:n_samp){
+    corResults[i] <- cor(x, sample(y), use = "complete.obs")
+  }
+ 
+  pval <- mean(abs(corResults) >= abs(cor(x, y, use = "complete.obs")))
+ 
+  if (plotit == T){
+    hist(corResults, col = "yellow", main = "", xlab = "Correlations", breaks = 50, xlim = range(corResults, cor(x ,y, use = "complete.obs")))
+      mtext("Permuted Sample Correlations", cex = 1.2, line = 1)
+      mtext(paste0("Permuted P-value = ", round(pval, 4),", Calculated P-value = ", round(cor.test(x, y)$p.value, 4)), cex = 0.8, line = 0)
+      abline(v = cor(x, y), col = "blue", lwd = 3)
+      text(cor(x, y, use = "complete.obs") * 0.95, 0, paste("Actual Correlation =", round(cor(x,y, use = "complete.obs"), 2)), srt = 90, adj = 0)
+   }
+  if (plotit == F){
+    return(round(pval, 5))
+  }
+}
+
+permCor(food$GPA, food$weight)
+
+```
+
+*From the graph, we see an r-squared value of 0.05, and a calculated p-value of 0.6475. The large p-value shows that these variables are not statistically significantly correlated.*
+
+## ANOVA
+
+*We chose to run an ANOVA test on the difference of life rewarding rating between the different exercise frequency groups. Since there were no responses with an exercise frequency of 1 or 2, we only examined the groups of frequency 3, 4, and 5. First, we calculate the standard deviations between the groups:*
+```{r}
+(sds <- tapply(food$life_rewarding, food$exercise, sd))
+
+round(max(sds)/min(sds), 1)
+```
+
+*Since the largest SD divided by the smallest SD is 1.1, which is less than 2, we can proceed with the ANOVA test:*
+
+```{r}
+(aov1 <- aov(food$life_rewarding ~ food$exercise))
+summary(aov1)
+```
+*Since the p value of 0.182 is larger than alpha = 0.05 we cannot reject the null hypothesis, meaning there is no significant difference in life rewarding rating between the different exercise groups.*
+
+## ANCOVA
+
+*Next, we attempt to identify the significance between the variables Gender and Education in predicting Weight through an ANCOVA test:*
+
+```{r}
+dim(food)
+Anvmod1 <- lm(weight ~ Gender*exercise)
+#Again, get overall test of significance of terms
+Anova(Anvmod1, type = 3)
+#Specific Differences
+summary(Anvmod1)
+
+plot(weight ~ exercise, col=factor(Gender), pch=16, cex=.5)
+legend("topleft", col = 1:2, legend = levels(factor(Gender)), pch = 16)
+Ancoefs <- coef(Anvmod1)
+Ancoefs
+abline(a = Ancoefs[1], b = Ancoefs[3], col = 1, lwd = 3)
+abline(a = Ancoefs[1] + Ancoefs[2], b = Ancoefs[3] + Ancoefs[4], col = 2, lwd = 3)
+
+```
+
+*The p-value of 0.478, which is clearly greater than 0.05 or any other alpha-value we could reasonably expect, found by the ANCOVA test indicates that the interaction between Gender and Education is non-significant in predicting Weight. Below, we create a plot of Weight as predicted by Education with separate colors to indicate Gender, superimposing our two predicted regression lines for Males and Females. The lines clearly don't interact, proving consistent with our results from our initial test.*
+
+## Multiple Regression
+
+*Finally, we ran a multiple regression to analyze the correlation between weight and life_rewarding, eating_changes_coded, and exercise:*
+
+```{r, fig.width = 6, fig.height = 4}
+qqPlot(weight, main = "QQ Plot Weight", pch = 19)
+hist(weight, col = "red", main = "Weight")
+food <- na.omit(food[, c("life_rewarding", "cook", "exercise", "weight", "GPA", "self_perception_weight", "nutritional_check", "healthy_feeling", "eating_changes_coded")])
+
+sigcorr <- cor.mtest(food, conf.level = .95)
+corrplot.mixed(cor(food), lower.col="black", upper = "ellipse", tl.col = "black", number.cex=.7, 
+                tl.pos = "lt", tl.cex=.7, p.mat = sigcorr$p, sig.level = .05)
+
+pairsJDRS(food)
+lm1 <- lm(weight ~ GPA + cook + exercise + self_perception_weight + nutritional_check + eating_changes_coded + healthy_feeling, data = food)
+summary(lm1)
+
+mod2 <- regsubsets(weight ~., data = food)
+mod2sum <- summary(mod2)
+mod2sum$which
+modnum <- which.max(mod2sum$rsq)
+names(food)[mod2sum$which[modnum,]][-1]
+foodtemp <- food[,mod2sum$which[modnum,]]
+summary(lm(weight ~ ., data = foodtemp))
+
+#Best model according to Adjusted R-squared
+modnum <- which.max(mod2sum$adjr2)
+names(food)[mod2sum$which[modnum, ]][-1]
+foodtemp <- food[,mod2sum$which[modnum,]]
+summary(lm(weight ~ ., data = foodtemp))
+
+#Best model according to Bayesian Information Criteria (BIC)
+modnum <- which.min(mod2sum$bic)
+names(food)[mod2sum$which[modnum, ]][-1]
+foodtemp <- food[,mod2sum$which[modnum,]]
+summary(lm(weight ~ ., data = foodtemp))
+
+#Best model according to Cp Statistic (a bit more complicated)
+modnum <- min(c(1:length(mod2sum$cp))[mod2sum$cp < c(1:length(mod2sum$cp))+1])
+names(food)[mod2sum$which[modnum, ]][-1]
+foodtemp <- food[,mod2sum$which[modnum,]]
+summary(lm(weight ~ ., data = foodtemp))
+```
+
+```{r}
+#Final Model (BIC)
+modnum <- which.min(mod2sum$bic)
+foodtemp <- food[, mod2sum$which[modnum,]]
+modfin <- lm(weight ~ ., data = foodtemp)
+summary(modfin)
+
+myResPlots2(modfin, "Food Model")
+```
+
+*Finally, we did a multiple regression to analyze the correlation between weight and the other variables in our data set. The coefficients show that eating_changes_coded is a statistically significant predictor of weight, as the p value is 0.000416, while other all other predictors had p-values above .05, and so in the process of determining the best model were removed. The coefficient for eating_changes_coded is positive, indicating that as the level of eating changes increases, so does weight. This makes sense as a change in eating habits can often lead to weight fluctuation. The R-squared of the regression is .1237, indicating that the model explains 12.37% of the variance in the response variable, which is weight. This shows that this is a somewhat weak model, which given that most variables were insignificant, makes sense.*
+
+## Conclusion
+
+*Throughout this project, we analyzed college students' relationships with food through a variety of survey questions. We looked at a few basic graphs, which showed us that many of the variables had little correlation. Next, we ran a t-test to examine the difference between weight between gender groups, and found a significant difference, with a mean female weight of 146.5lbs and mean male weight of 176.8lbs. Next, we calculated a confidence interval and bootstrapped confidence interval on the relationship between weight and GPA. Both intervals contained 0, meaning there was not a statistically significant correlation. We also ran a permutation test on GPA vs Weight, because we were unsure about the normality of the data sets. We got an r-squared value of 0.05, and a calculated p-value of 0.6475 showing again that the variables were not statistically significantly correlated. We then ran an ANOVA test on the difference of life rewarding rating between the different exercise frequency groups, and an ANCOVA test on the effect of Gender and Education in predicting Weight. We got p-values of 0.182 and 0.478 respectively, showing neither relationship was statistically significant. Finally, we ran a multiple regression to analyze the correlation between weight and the other variables. There was a significant correlation between eating habits changing in college and weight, but overall, the model accounted for only 12.37% of the variance in weight.*
+
